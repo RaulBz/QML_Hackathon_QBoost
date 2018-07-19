@@ -13,26 +13,49 @@
 #    limitations under the License.
 
 
-from sklearn.tree import DecisionTreeClassifier
+from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
+from sklearn.ensemble import AdaBoostClassifier, RandomForestClassifier, AdaBoostRegressor
 import numpy as np
 from copy import deepcopy
 
+def weight_penalty(h, y): 
+    """
+    Compute the Root Mean Squared Log Error for hypthesis h and targets y
 
-class WeakClassifiers(object):
+    Args:
+        h - numpy array containing predictions with shape (n_samples, n_targets)
+        y - numpy array containing targets with shape (n_samples, n_targets)
+    """
+    diff = np.abs(h-y)
+    minn = diff.min()
+    maxx = diff.max()
+    norm = (diff-minn)/(maxx-minn)
+    norm = 1.0*(norm > 0.5)
+#     h, y = np.expm1(h), np.expm1(y)
+    
+    return norm
+
+class WeakRegressor(object):
     """
     Weak Classifiers based on DecisionTree
     """
 
-    def __init__(self, n_estimators=50, max_depth=3):
+    def __init__(self, n_estimators=50, max_depth=3, DT = True, Ada = False, ):
         self.n_estimators = n_estimators
         self.estimators_ = []
         self.max_depth = max_depth
         self.__construct_wc()
+        self.Qu = 0.0
+        self.hij = 0.0
+        self.var1 = 0.0
+        self.qij = 0.0
 
     def __construct_wc(self):
 
-        self.estimators_ = [DecisionTreeClassifier(max_depth=self.max_depth,
-                                                   random_state=np.random.randint(1000000,10000000))
+#        self.estimators_ = [DecisionTreeRegressor(max_depth=self.max_depth,
+#                                                   random_state=np.random.randint(1000000,10000000))
+#                            for _ in range(self.n_estimators)]
+        self.estimators_ = [AdaBoostRegressor(random_state=np.random.randint(1000000,10000000))
                             for _ in range(self.n_estimators)]
 
     def fit(self, X, y):
@@ -47,12 +70,20 @@ class WeakClassifiers(object):
 
         d = np.ones(len(X)) / len(X)
         for i, h in enumerate(self.estimators_):
+            print('i', i)
             h.fit(X, y, sample_weight=d)
             pred = h.predict(X)
-            eps = d.dot(pred != y)
+            print('pred', pred)
+            print(pred.shape, y.shape)
+            norm = weight_penalty(pred, y)
+            eps = d.dot(norm)
+            print('eps', eps)
             if eps == 0: # to prevent divided by zero error
                 eps = 1e-20
+#            if eps == 1.0:
+#                eps = 1.0 - 1e-20
             w = (np.log(1 - eps) - np.log(eps)) / 2
+            print(w)
             d = d * np.exp(- w * y * pred)
             d = d / d.sum()
             self.estimator_weights[i] = w
@@ -78,7 +109,7 @@ class WeakClassifiers(object):
 
     def copy(self):
 
-        clf = WeakClassifiers(n_estimators=self.n_estimators, max_depth=self.max_depth)
+        clf = WeakRegressor(n_estimators=self.n_estimators, max_depth=self.max_depth)
         clf.estimators_ = deepcopy(self.estimators_)
         if hasattr(self, 'estimator_weights'):
             clf.estimator_weights = np.array(self.estimator_weights)
@@ -86,12 +117,12 @@ class WeakClassifiers(object):
         return clf
 
 
-class QBoostClassifier(WeakClassifiers):
+class QBoostRegressor(WeakRegressor):
     """
     Qboost
     """
     def __init__(self, n_estimators=50, max_depth=3):
-        super(QBoostClassifier, self).__init__(n_estimators=n_estimators,
+        super(QBoostRegressor, self).__init__(n_estimators=n_estimators,
                                               max_depth=max_depth)
 
     def fit(self, X, y, sampler, lmd=0.2, **kwargs):
@@ -99,7 +130,7 @@ class QBoostClassifier(WeakClassifiers):
         n_data = len(X)
 
         # step 1: fit weak classifiers
-        super(QBoostClassifier, self).fit(X, y)
+        super(QBoostRegressor, self).fit(X, y)
 
         # step 2: create QUBO
         hij = []
@@ -109,16 +140,23 @@ class QBoostClassifier(WeakClassifiers):
         hij = np.array(hij)
         # scale hij to [-1/N, 1/N]
         hij = 1. * hij / self.n_estimators
-
+        self.hij = hij
+#        print(hij, 'HIJ ----------------------------------------------------', hij.shape())
+#        print(y, 'Y------------------------------------------------------------', y.shape())
         ## Create QUBO
         qii = n_data * 1. / (self.n_estimators ** 2) + lmd - 2 * np.dot(hij, y)
+        self.var1 = qii
+#        print(qii, 'QII-------------------------------------------------------', qii.shape())
         qij = np.dot(hij, hij.T)
+        self.qij = qij
         Q = dict()
         Q.update(dict(((k, k), v) for (k, v) in enumerate(qii)))
         for i in range(self.n_estimators):
             for j in range(i + 1, self.n_estimators):
                 Q[(i, j)] = qij[i, j]
 
+        self.Qu = Q
+        print(Q)
         # step 3: optimize QUBO
         res = sampler.sample_qubo(Q, **kwargs)
         samples = np.array([[samp[k] for k in range(self.n_estimators)] for samp in res])

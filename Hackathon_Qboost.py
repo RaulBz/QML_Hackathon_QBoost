@@ -78,17 +78,17 @@ def assess_grad(X, y_list, model_list):
 sapi_token = 'CDL8-df1de1d5d76560ee73a82ffca3833a1a444536d3'
 url = 'https://cloud.dwavesys.com/sapi'
 token = sapi_token
-solver_name = 'DW_2000Q_2'
+solver_name = 'c4-sw_sample'
 
 # import necessary packages
 from sklearn import preprocessing, metrics
-from sklearn.ensemble import AdaBoostClassifier, RandomForestClassifier
+from sklearn.ensemble import AdaBoostClassifier, RandomForestClassifier, AdaBoostRegressor
 from sklearn.datasets.mldata import fetch_mldata
 from sklearn.datasets import load_breast_cancer
 from dwave.system.samplers import DWaveSampler
 from dwave.system.composites import EmbeddingComposite
 
-from qboost import WeakClassifiers, QBoostClassifier, QboostPlus
+from qboost import WeakRegressor, QBoostRegressor, QboostPlus
 
 
 # Define the functions required in this example
@@ -103,18 +103,28 @@ from qboost import WeakClassifiers, QBoostClassifier, QboostPlus
 #    return metrics.accuracy_score(y, y_pred)
 
 # performance metric
-def metric(h, y): 
-    """
-    Compute the Root Mean Squared Log Error for hypthesis h and targets y
+#def metric(h, y): 
+#    """
+#    Compute the Root Mean Squared Log Error for hypthesis h and targets y
 
-    Args:
-        h - numpy array containing predictions with shape (n_samples, n_targets)
-        y - numpy array containing targets with shape (n_samples, n_targets)
+#    Args:
+#        h - numpy array containing predictions with shape (n_samples, n_targets)
+#        y - numpy array containing targets with shape (n_samples, n_targets)
+#    """
+#    
+##     h, y = np.expm1(h), np.expm1(y)
+#    
+#    return np.sqrt(np.square(np.log(h + 1) - np.log(y + 1)).mean())
+
+
+def metric(y, y_pred):
     """
-    
-#     h, y = np.expm1(h), np.expm1(y)
-    
-    return np.sqrt(np.square(np.log(h + 1) - np.log(y + 1)).mean())
+    :param y: true label
+    :param y_pred: predicted label
+    :return: metric score
+    """
+
+    return metrics.accuracy_score(y, y_pred)
 
 def train_model(X_train, y_train, X_test, y_test, lmd):
     """
@@ -129,7 +139,7 @@ def train_model(X_train, y_train, X_test, y_test, lmd):
     # define parameters used in this function
     NUM_READS = 1000
     NUM_WEAK_CLASSIFIERS = 30
-    TREE_DEPTH = 2
+    TREE_DEPTH = 4
     DW_PARAMS = {'num_reads': NUM_READS,
                  'auto_scale': True,
                  'num_spin_reversal_transforms': 10,
@@ -157,15 +167,25 @@ def train_model(X_train, y_train, X_test, y_test, lmd):
     X_test = scaler.fit_transform(X_test)
     X_test = normalizer.fit_transform(X_test)
 
+    ## Adaboost
+    print('\nAdaboost')
+    clf1 = AdaBoostRegressor(n_estimators=NUM_WEAK_CLASSIFIERS)
+    clf1.fit(X_train, y_train)
+    y_train1 = clf1.predict(X_train)
+    y_test1 = clf1.predict(X_test)
+#     print(clf1.estimator_weights_)
+    print('accu (train): %5.2f'%(rmsle(y_train, y_train1)))
+    print('accu (test): %5.2f'%(rmsle(y_test, y_test1)))
+
     # Qboost
     print('\nQBoost')
-    clf4 = QBoostClassifier(n_estimators=NUM_WEAK_CLASSIFIERS, max_depth=TREE_DEPTH)
+    clf4 = QBoostRegressor(n_estimators=NUM_WEAK_CLASSIFIERS, max_depth=TREE_DEPTH)
     clf4.fit(X_train, y_train, emb_sampler, lmd=lmd, **DW_PARAMS)
     y_train4 = clf4.predict(X_train)
     y_test4 = clf4.predict(X_test)
     print(clf4.estimator_weights)
-    print('accu (train): %5.2f' % (metric(y_train, y_train4)))
-    print('accu (test): %5.2f' % (metric(y_test, y_test4)))
+    print('accu (train): %5.2f' % (rmsle(y_train, y_train4)))
+    print('accu (test): %5.2f' % (rmsle(y_test, y_test4)))
 
 #    # QboostPlus
 #    print('\nQBoostPlus')
@@ -183,7 +203,7 @@ def train_model(X_train, y_train, X_test, y_test, lmd):
 # start training the model
 X_train = X_tr
 y_train = y1_tr
-y_train = 2*(y_train >0.25) - 1
+#y_train = 2*(y_train >0.25) - 1
 X_test = X_train
 y_test = y_train
 clfs = train_model(X_train, y_train, X_test, y_test, 1.0)
