@@ -82,13 +82,14 @@ solver_name = 'c4-sw_sample'
 
 # import necessary packages
 from sklearn import preprocessing, metrics
-from sklearn.ensemble import AdaBoostClassifier, RandomForestClassifier, AdaBoostRegressor
+from sklearn.ensemble import AdaBoostClassifier, RandomForestClassifier, AdaBoostRegressor, RandomForestRegressor
 from sklearn.datasets.mldata import fetch_mldata
 from sklearn.datasets import load_breast_cancer
 from dwave.system.samplers import DWaveSampler
 from dwave.system.composites import EmbeddingComposite
+from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 
-from qboost import WeakRegressor, QBoostRegressor, QboostPlus
+from qboost import WeakRegressor, QBoostRegressor, QboostPlus, QboostPlusRegression
 
 
 # Define the functions required in this example
@@ -167,6 +168,16 @@ def train_model(X_train, y_train, X_test, y_test, lmd):
     X_test = scaler.fit_transform(X_test)
     X_test = normalizer.fit_transform(X_test)
 
+#    GradientBoost
+    clf0 = GradientBoostingRegressor(n_estimators=NUM_WEAK_CLASSIFIERS)
+    clf0.fit(X_train, y_train)
+    y_train1 = clf0.predict(X_train)
+    y_test1 = clf0.predict(X_test)
+#     print(clf1.estimator_weights_)
+    print('accu (train): %5.2f'%(rmsle(y_train, y_train1)))
+    print('accu (test): %5.2f'%(rmsle(y_test, y_test1)))
+
+
     ## Adaboost
     print('\nAdaboost')
     clf1 = AdaBoostRegressor(n_estimators=NUM_WEAK_CLASSIFIERS)
@@ -176,6 +187,25 @@ def train_model(X_train, y_train, X_test, y_test, lmd):
 #     print(clf1.estimator_weights_)
     print('accu (train): %5.2f'%(rmsle(y_train, y_train1)))
     print('accu (test): %5.2f'%(rmsle(y_test, y_test1)))
+
+    # Ensembles of Decision Tree
+    print('\nDecision tree')
+    clf2 = WeakRegressor(n_estimators=NUM_WEAK_CLASSIFIERS, max_depth=TREE_DEPTH)
+    clf2.fit(X_train, y_train)
+    y_train2 = clf2.predict(X_train)
+    y_test2 = clf2.predict(X_test)
+#     print(clf2.estimator_weights)
+    print('accu (train): %5.2f' % (rmsle(y_train, y_train2)))
+    print('accu (test): %5.2f' % (rmsle(y_test, y_test2)))
+    
+    # Random forest
+    print('\nRandom Forest')
+    clf3 = RandomForestRegressor(max_depth=TREE_DEPTH, n_estimators=NUM_WEAK_CLASSIFIERS)
+    clf3.fit(X_train, y_train)
+    y_train3 = clf3.predict(X_train)
+    y_test3 = clf3.predict(X_test)
+    print('accu (train): %5.2f' % (rmsle(y_train, y_train3)))
+    print('accu (test): %5.2f' % (rmsle(y_test, y_test3)))
 
     # Qboost
     print('\nQBoost')
@@ -187,18 +217,18 @@ def train_model(X_train, y_train, X_test, y_test, lmd):
     print('accu (train): %5.2f' % (rmsle(y_train, y_train4)))
     print('accu (test): %5.2f' % (rmsle(y_test, y_test4)))
 
-#    # QboostPlus
-#    print('\nQBoostPlus')
-#    clf5 = QboostPlus([clf1, clf2, clf3, clf4])
-#    clf5.fit(X_train, y_train, emb_sampler, lmd=lmd, **DW_PARAMS)
-#    y_train5 = clf5.predict(X_train)
-#    y_test5 = clf5.predict(X_test)
-#    print(clf5.estimator_weights)
-#    print('accu (train): %5.2f' % (metric(y_train, y_train5)))
-#    print('accu (test): %5.2f' % (metric(y_test, y_test5)))
+    # QboostPlus
+    print('\nQBoostPlus')
+    clf5 = QboostPlusRegression([clf0, clf1, clf2, clf3, clf4])
+    clf5.fit(X_train, y_train, emb_sampler, lmd=lmd, **DW_PARAMS)
+    y_train5 = clf5.predict(X_train)
+    y_test5 = clf5.predict(X_test)
+    print(clf5.estimator_weights)
+    print('accu (train): %5.2f' % (rmsle(y_train, y_train5)))
+    print('accu (test): %5.2f' % (rmsle(y_test, y_test5)))
 
     
-    return [clf4]
+    return [clf4, y_train4, y_train5]
 
 # start training the model
 X_train = X_tr
@@ -206,5 +236,110 @@ y_train = y1_tr
 #y_train = 2*(y_train >0.25) - 1
 X_test = X_train
 y_test = y_train
-clfs = train_model(X_train, y_train, X_test, y_test, 1.0)
+#clfs = train_model(X_train, y_train, X_test, y_test, 1.0)
+
+lmd = 0.2
+
+"""
+:param X_train: training data
+:param y_train: training label
+:param X_test: testing data
+:param y_test: testing label
+:param lmd: lambda used in regularization
+:return:
+"""
+
+# define parameters used in this function
+NUM_READS = 1000
+NUM_WEAK_CLASSIFIERS = 30
+TREE_DEPTH = 4
+DW_PARAMS = {'num_reads': NUM_READS,
+             'auto_scale': True,
+             'num_spin_reversal_transforms': 10,
+             'postprocess': 'optimization',
+             }
+
+# define sampler
+dwave_sampler = DWaveSampler(token=sapi_token, endpoint = url)
+emb_sampler = EmbeddingComposite(dwave_sampler)
+
+N_train = len(X_train)
+N_test = len(X_test)
+print("\n======================================")
+print("Train size: %d, Test size: %d" %(N_train, N_test))
+print('Num weak classifiers:', NUM_WEAK_CLASSIFIERS)
+
+# Preprocessing data
+imputer = preprocessing.Imputer()
+scaler = preprocessing.StandardScaler()
+normalizer = preprocessing.Normalizer()
+
+X_train = scaler.fit_transform(X_train)
+X_train = normalizer.fit_transform(X_train)
+
+X_test = scaler.fit_transform(X_test)
+X_test = normalizer.fit_transform(X_test)
+
+#    GradientBoost
+clf0 = GradientBoostingRegressor(n_estimators=NUM_WEAK_CLASSIFIERS)
+clf0.fit(X_train, y_train)
+y_train1 = clf0.predict(X_train)
+y_test1 = clf0.predict(X_test)
+#     print(clf1.estimator_weights_)
+print('accu (train): %5.2f'%(rmsle(y_train, y_train1)))
+print('accu (test): %5.2f'%(rmsle(y_test, y_test1)))
+
+
+## Adaboost
+print('\nAdaboost')
+clf1 = AdaBoostRegressor(n_estimators=NUM_WEAK_CLASSIFIERS)
+clf1.fit(X_train, y_train)
+y_train1 = clf1.predict(X_train)
+y_test1 = clf1.predict(X_test)
+#     print(clf1.estimator_weights_)
+print('accu (train): %5.2f'%(rmsle(y_train, y_train1)))
+print('accu (test): %5.2f'%(rmsle(y_test, y_test1)))
+
+# Ensembles of Decision Tree
+print('\nDecision tree')
+clf2 = WeakRegressor(n_estimators=NUM_WEAK_CLASSIFIERS, max_depth=TREE_DEPTH)
+clf2.fit(X_train, y_train)
+y_train2 = clf2.predict(X_train)
+y_test2 = clf2.predict(X_test)
+#     print(clf2.estimator_weights)
+print('accu (train): %5.2f' % (rmsle(y_train, y_train2)))
+print('accu (test): %5.2f' % (rmsle(y_test, y_test2)))
+
+# Random forest
+print('\nRandom Forest')
+clf3 = RandomForestRegressor(max_depth=TREE_DEPTH, n_estimators=NUM_WEAK_CLASSIFIERS)
+clf3.fit(X_train, y_train)
+y_train3 = clf3.predict(X_train)
+y_test3 = clf3.predict(X_test)
+print('accu (train): %5.2f' % (rmsle(y_train, y_train3)))
+print('accu (test): %5.2f' % (rmsle(y_test, y_test3)))
+
+# Qboost
+print('\nQBoost')
+clf4 = QBoostRegressor(n_estimators=NUM_WEAK_CLASSIFIERS, max_depth=TREE_DEPTH)
+clf4.fit(X_train, y_train, emb_sampler, lmd=lmd, **DW_PARAMS)
+y_train4 = clf4.predict(X_train)
+y_test4 = clf4.predict(X_test)
+print(clf4.estimator_weights)
+print('accu (train): %5.2f' % (rmsle(y_train, y_train4)))
+print('accu (test): %5.2f' % (rmsle(y_test, y_test4)))
+
+regressor_list = [clf0, clf1, clf2, clf3, clf4]
+for i in range(3):
+    regressor_list += regressor_list
+# QboostPlus
+print('\nQBoostPlus')
+clf5 = QboostPlusRegression(regressor_list)
+clf5.fit(X_train, y_train, emb_sampler, lmd=lmd, **DW_PARAMS)
+y_train5 = clf5.predict(X_train)
+y_test5 = clf5.predict(X_test)
+print(clf5.estimator_weights)
+print('accu (train): %5.2f' % (rmsle(y_train, y_train5)))
+print('accu (test): %5.2f' % (rmsle(y_test, y_test5)))
+
 

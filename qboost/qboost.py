@@ -303,9 +303,13 @@ class QBoostRegressor(WeakRegressor):
         n_data = len(X)
         pred_all = np.array([h.predict(X) for h in self.estimators_])
         temp1 = np.dot(self.estimator_weights, pred_all)
-        T1 = np.sum(temp1, axis=0) / (n_data * self.n_estimators * 1.)
-        y = np.sign(temp1 - T1)
-
+#        T1 = np.sum(temp1, axis=0) / (n_data * self.n_estimators * 1.)
+#        y = np.sign(temp1 - T1)
+        norm = np.sum(self.estimator_weights)
+        if norm > 0:
+            y = temp1 / norm
+        else:
+            y = temp1
         return y
 
 
@@ -358,6 +362,62 @@ class QboostPlus(object):
             T += np.sum(y0)
 
         y = np.sign(y - T / (n_data*self.n_estimators))
+
+        return y
+
+class QboostPlusRegression(object):
+    """
+    Quantum boost existing (weak) classifiers
+    """
+
+    def __init__(self, weak_Regressor_list):
+        self.estimators_ = weak_Regressor_list
+        self.n_estimators = len(self.estimators_)
+        self.estimator_weights = np.ones(self.n_estimators)
+
+    def fit(self, X, y, sampler, lmd=0.2, **kwargs):
+
+        n_data = len(X)
+        # step 1: create QUBO
+        hij = []
+        for h in self.estimators_:
+            hij.append(h.predict(X))
+
+        hij = np.array(hij)
+        # scale hij to [-1/N, 1/N]
+        hij = 1. * hij / self.n_estimators
+
+        ## Create QUBO
+        qii = n_data * 1. / (self.n_estimators ** 2) + lmd - 2 * np.dot(hij, y)
+        qij = np.dot(hij, hij.T)
+        Q = dict()
+        Q.update(dict(((k, k), v) for (k, v) in enumerate(qii)))
+        for i in range(self.n_estimators):
+            for j in range(i + 1, self.n_estimators):
+                Q[(i, j)] = qij[i, j]
+
+        # step 3: optimize QUBO
+        res = sampler.sample_qubo(Q, **kwargs)
+        samples = np.array([[samp[k] for k in range(self.n_estimators)] for samp in res])
+
+        # take the optimal solution as estimator weights
+        self.estimator_weights = samples[0]
+
+    def predict(self, X):
+
+        n_data = len(X)
+        T = 0
+        y = np.zeros(n_data)
+        for i, h in enumerate(self.estimators_):
+            y0 = self.estimator_weights[i] * h.predict(X)  # prediction of weak classifier
+            y += y0
+            T += np.sum(y0)
+
+        norm = np.sum(self.estimator_weights)
+        if norm > 0:
+            y = temp1 / norm
+        else:
+            y = temp1
 
         return y
 
