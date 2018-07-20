@@ -299,15 +299,16 @@ y_test1 = clf1.predict(X_test)
 print('accu (train): %5.2f'%(rmsle(y_train, y_train1)))
 print('accu (test): %5.2f'%(rmsle(y_test, y_test1)))
 
-# Ensembles of Decision Tree
-print('\nDecision tree')
-clf2 = WeakRegressor(n_estimators=NUM_WEAK_CLASSIFIERS, max_depth=TREE_DEPTH)
-clf2.fit(X_train, y_train)
-y_train2 = clf2.predict(X_train)
-y_test2 = clf2.predict(X_test)
+## Ensembles of Decision Tree
+#print('\nDecision tree')
+#clf2 = WeakRegressor(n_estimators=NUM_WEAK_CLASSIFIERS, max_depth=TREE_DEPTH)
+#clf2.fit(X_train, y_train)
+#y_train2 = clf2.predict(X_train)
+#y_test2 = clf2.predict(X_test)
 #     print(clf2.estimator_weights)
-print('accu (train): %5.2f' % (rmsle(y_train, y_train2)))
-print('accu (test): %5.2f' % (rmsle(y_test, y_test2)))
+#print('accu (train): %5.2f' % (rmsle(y_train, y_train2)))
+#print('accu (test): %5.2f' % (rmsle(y_test, y_test2)))
+
 
 # Random forest
 print('\nRandom Forest')
@@ -328,7 +329,8 @@ print(clf4.estimator_weights)
 print('accu (train): %5.2f' % (rmsle(y_train, y_train4)))
 print('accu (test): %5.2f' % (rmsle(y_test, y_test4)))
 
-regressor_list = [clf0, clf1, clf2, clf3, clf4]
+regressor_list = [clf0, clf1, clf3, clf4]
+
 for i in range(3):
     regressor_list += regressor_list
 # QboostPlus
