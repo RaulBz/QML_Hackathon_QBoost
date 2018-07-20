@@ -3,6 +3,9 @@ import os
 import pandas as pd
 import numpy as np
 
+from sklearn.model_selection import train_test_split
+
+
 X_tr = np.load('X_train.npy')
 X_te = np.load('X_test.npy')
 y1_tr = np.load('y1_train.npy')
@@ -231,23 +234,19 @@ def train_model(X_train, y_train, X_test, y_test, lmd):
     return [clf4, y_train4, y_train5]
 
 # start training the model
-X_train = X_tr
-y_train = y1_tr
+#X_train = X_tr
+#y_train = y1_tr
 #y_train = 2*(y_train >0.25) - 1
-X_test = X_train
-y_test = y_train
-#clfs = train_model(X_train, y_train, X_test, y_test, 1.0)
+#X_test = X_train
+#y_test = y_train
+
+random_state = np.random.RandomState(0)
+x = X_tr
+y = y1_tr
+X_train, X_test, y_train, y_test = train_test_split(x, y, test_size=.2, random_state=0)
 
 lmd = 0.2
-
-"""
-:param X_train: training data
-:param y_train: training label
-:param X_test: testing data
-:param y_test: testing label
-:param lmd: lambda used in regularization
-:return:
-"""
+#clfs = train_model(X_train, y_train, X_test, y_test, 1.0)
 
 # define parameters used in this function
 NUM_READS = 1000
@@ -341,5 +340,4 @@ y_test5 = clf5.predict(X_test)
 print(clf5.estimator_weights)
 print('accu (train): %5.2f' % (rmsle(y_train, y_train5)))
 print('accu (test): %5.2f' % (rmsle(y_test, y_test5)))
-
 
