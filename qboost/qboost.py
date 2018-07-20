@@ -415,9 +415,9 @@ class QboostPlusRegression(object):
 
         norm = np.sum(self.estimator_weights)
         if norm > 0:
-            y = temp1 / norm
+            y = y / norm
         else:
-            y = temp1
+            y = y
 
         return y
 
